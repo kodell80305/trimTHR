@@ -8,8 +8,7 @@ Sand tables are devices that use a ball bearing or similar object to draw images
 
 # Algorithm Overview
 
-The Douglas Peucker algorithm works by iteratively removing points from a curve that are within a certain tolerance of a line segment connecting two other points on the curve. The algorithm starts with the line segment connecting the first and last points of the curve. If all the int  
-ermediate points are within the tolerance, they are removed. If any point is outside the tolerance, the curve is split at that point, and the algorithm is recursively applied to the two resulting sub-curves.
+The Douglas Peucker algorithm works by iteratively removing points from a curve that are within a certain tolerance of a line segment connecting two other points on the curve. The algorithm starts with the line segment connecting the first and last points of the curve. If all the intermediate points are within the tolerance, they are removed. If any point is outside the tolerance, the curve is split at that point, and the algorithm is recursively applied to the two resulting sub-curves.
 
 # Implementation
 
