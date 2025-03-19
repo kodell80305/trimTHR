@@ -1,5 +1,7 @@
 # Sand Table Image Path Optimization using Douglas-Peucker Algorithm
 
+Using AI and Python to explore data analysis and visualization.  Short version ... the combination is absolutely incredible.
+
 This README describes how to implement the Douglas Peucker algorithm to optimize path lengths for drawing images on a sand table. This was/is an experiment in using AI/Python for data analysis and visualisation.  I spend about 8 hours and had Copilot write all of the code here.  I've put this aside for now, but there is so much more to explore and the combination of Python and AI generated is incredible.  The Douglas Peuker algorithm actually works pretty well at cutting down the number of segments, but I'm not sure how much value that has ... I would like to see if it has any effect on reducing artifacts (noise, sections where short, unproductive line segments exist) on algorithically generated or image capture paths.
 
 Optimizing path lengths reduces drawing time and improves the overall efficiency of the sand table's operation.  Using the sandtable, it seemed that certain patterns produced a lot of noise while drawing ... this seemed to be due to the ball just moving back and forth, so I wondered if we could trim pattern to only include "meaningful" segments, i.e., those that produce a noticable pattern.   My first thought was that we could look at how far the ball moved and if it wasn't a significant value (e.g. .1% of the size of the table), we could drop that segment.  My son Nick Odell suggested the Douglas-Peucker algorithm.
