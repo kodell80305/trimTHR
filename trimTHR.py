@@ -5,6 +5,7 @@ matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import argparse
 import sys
+import csv  # Add import for CSV handling
 
 def read_segments(file_path, diameter):
     with open(file_path, 'r') as file:
@@ -12,9 +13,15 @@ def read_segments(file_path, diameter):
         for line in file:
             line = line.strip()
             if line and not line.startswith('#'):
-                theta, r = map(float, line.split())
-                r *= diameter / 2  # Scale the distance to the specified diameter
-                segments.append((theta, r))
+                try:
+                    theta, r = map(float, line.split())
+                    r *= diameter / 2  # Scale the distance to the specified diameter
+                    # Convert polar to Cartesian coordinates
+                    x = r * math.cos(theta)
+                    y = r * math.sin(theta)
+                    segments.append((x, y, theta, r))  # Store Cartesian (x, y) and original polar (theta, r)
+                except ValueError:
+                    print(f"Skipping invalid line in file {file_path}: {line}")
     return segments
 
 def write_segments(file_path, segments):
@@ -26,11 +33,14 @@ def write_segments(file_path, segments):
 def filter_segments(segments, threshold_percent, diameter):
     print(f"Filtering segments with threshold percent {threshold_percent}% and diameter {diameter}...")
     threshold_distance = (threshold_percent / 100) * diameter
+    if threshold_distance == 0:  # Prevent division by zero
+        print("Threshold distance is zero, skipping filtering.")
+        return segments
     filtered_segments = [segments[0]]
     for i in range(1, len(segments)):
-        r1, theta1 = segments[i-1]
-        r2, theta2 = segments[i]
-        distance = math.sqrt(r1**2 + r2**2 - 2*r1*r2*math.cos(theta2 - theta1))
+        x1, y1, _, _ = segments[i-1]
+        x2, y2, _, _ = segments[i]
+        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
         if distance >= threshold_distance:
             filtered_segments.append(segments[i])
     print(f"Filtered down to {len(filtered_segments)} segments.")
@@ -56,18 +66,23 @@ def douglas_peucker(segments, epsilon, max_deviation):
     print(f"Applying Douglas-Peucker algorithm with epsilon {epsilon} ...")
     def perpendicular_distance(point, start, end):
         if start == end:
+            # If start and end points are the same, return the distance from the point to the start
             return math.sqrt((point[0] - start[0]) ** 2 + (point[1] - start[1]) ** 2)
         else:
-            n = abs((end[1] - start[1]) * point[0] - (end[0] - start[0]) * point[1] + end[0] * start[1] - end[1] * start[0])
             d = math.sqrt((end[1] - start[1]) ** 2 + (end[0] - start[0]) ** 2)
+            if d == 0:  # Prevent division by zero
+                return 0
+            n = abs((end[1] - start[1]) * point[0] - (end[0] - start[0]) * point[1] + end[0] * start[1] - end[1] * start[0])
             return n / d
 
     def rdp(points, epsilon, max_deviation):
+        if len(points) < 2:  # Ensure there are at least two points
+            return points
         dmax = 0.0
         index = 0
         end = len(points)
         for i in range(1, end - 1):
-            d = perpendicular_distance(points[i], points[0], points[end - 1])
+            d = perpendicular_distance(points[i][:2], points[0][:2], points[end - 1][:2])  # Use only (x, y) for distance calculation
             if dmax >= max_deviation:
                 break
             if d > dmax:
@@ -91,15 +106,16 @@ def display_file_contents(file_path, diameter):
 def calculate_total_path_length(segments):
     total_length = 0.0
     for i in range(1, len(segments)):
-        r1, theta1 = segments[i-1]
-        r2, theta2 = segments[i]
-        distance = math.sqrt(r1**2 + r2**2 - 2*r1*r2*math.cos(theta2 - theta1))
+        x1, y1, _, _ = segments[i-1]  # Extract Cartesian coordinates of the previous point
+        x2, y2, _, _ = segments[i]    # Extract Cartesian coordinates of the current point
+        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)  # Calculate Euclidean distance
         total_length += distance
     return total_length
 
 def plot_segments(segments, title, ax=None, color='white', linewidth=0.01):
-    theta = [theta for theta, r in segments]  # No conversion to radians needed
-    r = [r for theta, r in segments]
+    # Extract theta and r from the updated tuple structure
+    theta = [segment[2] for segment in segments]  # Extract theta
+    r = [segment[3] for segment in segments]      # Extract r
     num_segments = len(segments)
     if ax is None:
         fig, ax = plt.subplots(subplot_kw={'projection': 'polar'})
@@ -109,7 +125,7 @@ def plot_segments(segments, title, ax=None, color='white', linewidth=0.01):
         ax.set_facecolor('#c9b17f')  # Light brown
         plt.show(block=True)
     else:
-        ax.plot(theta, r,  markersize=1, color=color, linewidth=1)
+        ax.plot(theta, r, markersize=1, color=color, linewidth=1)
         ax.set_ylim(0, max(r))
         ax.set_title(f"{title} ({num_segments} segments)")
         ax.set_facecolor('#c9b17f')  # Light brown
@@ -122,8 +138,12 @@ def calculate_max_deviation(original_segments, processed_segments):
     deviations.sort(key=lambda x: x[1], reverse=True)
     return deviations[:10]
 
-def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time):
+def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time, results):
     segments = read_segments(file_path, diameter)
+    if not segments:  # Check if the segments list is empty
+        print(f"No valid segments found in file: {file_path}. Skipping processing.")
+        return
+
     original_length = calculate_total_path_length(segments)
     
     if use_douglas_peucker:
@@ -132,11 +152,13 @@ def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, 
         processed_segments = filter_segments(segments, threshold_percent, diameter)
     
     # Ensure the start and end points remain untouched
-    processed_segments[0] = segments[0]
-    processed_segments[-1] = segments[-1]
+    if len(processed_segments) > 1:  # Ensure there are at least two segments
+        processed_segments[0] = segments[0]
+        processed_segments[-1] = segments[-1]
     
     processed_length = calculate_total_path_length(processed_segments)
     max_deviation_list = calculate_max_deviation(segments, processed_segments)
+    max_deviation = max(max_deviation_list, key=lambda x: x[1])[1] if max_deviation_list else 0.0
     
     relative_path = os.path.relpath(file_path, input_dir)
     output_file_path = os.path.join(output_dir, relative_path)
@@ -144,7 +166,9 @@ def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, 
     
     file_name = os.path.basename(file_path)
     print(f"{file_name}: Original segments: {len(segments)}, Processed segments: {len(processed_segments)}, Original length: {original_length:.2f} mm, Processed length: {processed_length:.2f} mm")
-
+    
+    # Append results for CSV
+    results.append([file_name, len(segments), len(processed_segments), f"{original_length:.2f}", f"{processed_length:.2f}", f"{max_deviation:.2f}"])
     
     fig, axs = plt.subplots(1, 3, figsize=(21, 7), subplot_kw={'projection': 'polar'})
     plot_segments(segments, 'Original Segments', ax=axs[0], color='white', linewidth=0.01)
@@ -155,8 +179,8 @@ def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, 
     if top_n_deviations > 0:
         top_deviations = max_deviation_list[:top_n_deviations]
         top_deviation_points = [segments[index] for index, _ in top_deviations]
-        theta = [theta for theta, r in top_deviation_points]
-        r = [r for theta, r in top_deviation_points]
+        theta = [point[2] for point in top_deviation_points]  # Extract theta
+        r = [point[3] for point in top_deviation_points]      # Extract r
         axs[2].plot(theta, r, 'ro', markersize=5)
     
     axs[0].set_title(f'Original Segments ({len(segments)} segments)')
@@ -174,14 +198,23 @@ def process_file(file_path, input_dir, output_dir, threshold_percent, diameter, 
     if show_histogram:
         generate_histogram(processed_segments, n_buckets)
 
-def process_files(input_path, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time):
+def process_files(input_path, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time, csv_file=None):
+    results = []  # List to store results for CSV
     if os.path.isfile(input_path):
-        process_file(input_path, os.path.dirname(input_path), output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time)
+        process_file(input_path, os.path.dirname(input_path), output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time, results)
     else:
         for root, _, files in os.walk(input_path):
             for file in files:
                 file_path = os.path.join(root, file)
-                process_file(file_path, input_path, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time)
+                process_file(file_path, input_path, output_dir, threshold_percent, diameter, n_buckets, epsilon, max_deviation, use_douglas_peucker, show_histogram, top_n_deviations, display_time, results)
+    
+    # Write results to CSV if csv_file is provided
+    if csv_file:
+        with open(csv_file, 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(['File Name', 'Original Segments', 'Processed Segments', 'Original Length (mm)', 'Processed Length (mm)', 'Max Deviation (mm)'])
+            writer.writerows(results)
+        print(f"Results saved to CSV file: {csv_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Process and trim path segments.')
@@ -196,6 +229,7 @@ if __name__ == "__main__":
     parser.add_argument('--show_histogram', action='store_true', help='Show histogram of path lengths')
     parser.add_argument('--top_n_deviations', type=int, default=1000, help='Number of top deviations to display on the processed graph (default: 0)')
     parser.add_argument('--display_time', type=float, default=5.0, help='Time to display each plot in seconds (default: 5.0)')
+    parser.add_argument('--csv_file', help='CSV file to save processing information for all processed files')
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -206,4 +240,4 @@ if __name__ == "__main__":
     if args.use_douglas_peucker and args.epsilon is None:
         parser.error("--epsilon is required when --use_douglas_peucker is specified")
 
-    process_files(args.input_path, args.output_dir, args.threshold_percent, args.diameter, args.n_buckets, args.epsilon, args.max_deviation, args.use_douglas_peucker, args.show_histogram, args.top_n_deviations, args.display_time)
+    process_files(args.input_path, args.output_dir, args.threshold_percent, args.diameter, args.n_buckets, args.epsilon, args.max_deviation, args.use_douglas_peucker, args.show_histogram, args.top_n_deviations, args.display_time, args.csv_file)
